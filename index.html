@@ -1,0 +1,918 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Dashboard công việc — Tải CSV</title>
+<style>
+  :root{
+    --bg:#070a14; --panel:#0f172a; --border:rgba(255,255,255,.08);
+    --text:#e7eaf0; --muted:#9aa4b2;
+    --accent:#ff8a1f; --accent2:#7c5cff; --ok:#2ecc71; --bad:#e74c3c;
+    --shadow: 0 18px 40px rgba(0,0,0,.45);
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  }
+  body{
+    margin:0;
+    background:
+      radial-gradient(1200px 700px at 30% 0%, rgba(255,138,31,.12), transparent 55%),
+      radial-gradient(900px 600px at 80% 10%, rgba(124,92,255,.12), transparent 55%),
+      linear-gradient(180deg, #050712, var(--bg));
+    color:var(--text);
+  }
+  .wrap{ max-width: 1320px; margin:0 auto; padding:18px 18px 34px; }
+  header{ position: sticky; top:0; z-index:10; backdrop-filter: blur(12px); background: rgba(7,10,20,.75); border-bottom:1px solid var(--border); }
+  .head{ display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 18px; }
+  .title{ font-weight:900; letter-spacing:.4px; text-transform:uppercase; font-size:20px; line-height:1.1; }
+  .subtitle{ color:var(--muted); font-size:12px; margin-top:6px; }
+  .badge{ border:1px solid var(--border); background: rgba(255,255,255,.03); padding:10px 12px; border-radius:12px; min-width: 200px; box-shadow: var(--shadow); }
+  .badge .lbl{ color:var(--muted); font-size:11px; }
+  .badge .val{ font-weight:900; margin-top:4px; }
+  .panel{ border:1px solid var(--border); background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.015)); border-radius:16px; box-shadow: var(--shadow);
+    transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+  .panel:hover{ transform: translateY(-2px); border-color: rgba(255,138,31,.35); box-shadow: 0 22px 46px rgba(0,0,0,.5); }
+  @keyframes fadeSlideUp{ from{ opacity:0; transform: translateY(10px); } to{ opacity:1; transform: translateY(0); } }
+  .fade-in{ animation: fadeSlideUp .5s ease both; }
+
+  /* Trang trí: 2 khối màu mờ trôi nhẹ phía sau nội dung */
+  .blob{ position:fixed; border-radius:50%; filter: blur(70px); z-index:0; pointer-events:none; }
+  .blob1{ width:380px; height:380px; background:var(--accent); opacity:.22; top:-140px; left:-100px; animation: floatBlob 16s ease-in-out infinite; }
+  .blob2{ width:340px; height:340px; background:var(--accent2); opacity:.20; top:260px; right:-120px; animation: floatBlob 20s ease-in-out infinite reverse; }
+  @keyframes floatBlob{ 0%,100%{ transform:translate(0,0) scale(1); } 50%{ transform:translate(36px,44px) scale(1.08); } }
+
+  /* Quầng sáng theo con trỏ chuột */
+  #cursorGlow{
+    position:fixed; width:190px; height:190px; border-radius:50%; pointer-events:none; z-index:1;
+    background: radial-gradient(circle, rgba(255,138,31,.09), rgba(124,92,255,.05) 45%, transparent 70%);
+    transform: translate(-50%,-50%); opacity:0; transition: opacity .5s ease;
+  }
+
+  /* Thanh tiến trình cuộn trang */
+  #scrollProgress{ position:fixed; top:0; left:0; height:3px; width:0%; z-index:50;
+    background: linear-gradient(90deg, var(--accent), var(--accent2)); box-shadow: 0 0 10px rgba(255,138,31,.6); }
+
+  /* Hiệu ứng xuất hiện khi cuộn tới */
+  .reveal{ opacity:0; transform: translateY(26px); transition: opacity .6s ease, transform .6s ease; }
+  .reveal.in-view{ opacity:1; transform: translateY(0); }
+
+  .wrap, header{ position:relative; z-index:2; }
+  button, select, input[type="file"]{ cursor:pointer; }
+  button{ transition: transform .12s ease, box-shadow .12s ease; }
+  button:hover{ transform: translateY(-1px) scale(1.03); box-shadow: 0 8px 18px rgba(255,138,31,.35); }
+  button:active{ transform: translateY(0) scale(.98); }
+  tbody tr{ transition: background .15s ease; cursor:default; }
+  tbody tr:hover{ background: rgba(255,138,31,.08); }
+  .field input, .field select{ transition: border-color .15s ease, box-shadow .15s ease; }
+  .field input:hover, .field select:hover{ border-color: rgba(255,138,31,.4); }
+  .field input:focus, .field select:focus{ border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,138,31,.15); }
+  .kpi .icon{ display:inline-block; transition: transform .2s ease; }
+  .kpi:hover .icon{ transform: scale(1.25) rotate(-6deg); }
+  .grid{ display:grid; gap:12px; }
+  .grid.kpis{ grid-template-columns: repeat(6, minmax(0,1fr)); }
+  @media (max-width: 1200px){ .grid.kpis{ grid-template-columns: repeat(3, minmax(0,1fr)); } }
+  @media (max-width: 640px){ .grid.kpis{ grid-template-columns: repeat(2, minmax(0,1fr)); } }
+  .kpi{ padding:12px 12px 10px; position:relative; overflow:hidden; }
+  .kpi .icon{ font-size:16px; margin-right:6px; opacity:.9; }
+  .kpi .lbl{ color:var(--muted); font-size:11px; display:flex; align-items:center; }
+  .kpi .val{ font-size:22px; font-weight:900; margin-top:6px; }
+  .kpi .hint{ color:var(--muted); font-size:11px; margin-top:6px; }
+  .insight{ border:1px solid rgba(255,138,31,.3); background: linear-gradient(90deg, rgba(255,138,31,.12), rgba(124,92,255,.08));
+    border-radius:14px; padding:12px 16px; font-size:13.5px; line-height:1.55; }
+  .insight b{ color:#ffd9ad; }
+  .controls{ display:flex; flex-wrap:wrap; gap:10px; align-items:end; padding:12px; }
+  .field{ display:flex; flex-direction:column; gap:6px; min-width: 170px;}
+  .field label{ font-size:11px; color:var(--muted); }
+  .field input, .field select{
+    background: rgba(255,255,255,.03); border: 1px solid var(--border); color: var(--text);
+    border-radius: 12px; padding:10px 10px; outline:none;
+  }
+  .field select option{
+    background: var(--panel); color: var(--text); padding:8px 10px;
+  }
+  .field select option:checked, .field select option:hover{
+    background: var(--accent); color:#111;
+  }
+  input[type="file"]::file-selector-button{
+    background: var(--accent); border:0; color:#111; padding:8px 12px; border-radius:10px;
+    font-weight:800; cursor:pointer; margin-right:10px;
+  }
+  button{ background: var(--accent); border:0; color:#111; padding:10px 12px; border-radius:12px; font-weight:900; cursor:pointer; }
+  button.secondary{ background: rgba(255,255,255,.06); border:1px solid var(--border); color: var(--text); }
+  .grid2{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+  @media (max-width: 1100px){ .grid2{ grid-template-columns: 1fr; } }
+  .radarLayout{ display:grid; grid-template-columns: 1fr 1.15fr; grid-template-rows: 1fr 1fr; gap:12px; height:680px; }
+  .radarLayout .panel{ display:flex; flex-direction:column; min-height:0; }
+  .radarLayout .panel .pad{ flex:1; min-height:0; position:relative; }
+  @media (max-width: 1100px){
+    .radarLayout{ grid-template-columns: 1fr; height:auto; }
+    .radarLayout .panel{ grid-column:1 !important; grid-row:auto !important; min-height:280px; }
+    #chartProjectRadar{ max-height:340px !important; }
+  }
+  .panelHead{ display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:12px 12px 0; }
+  .panelTitle{ font-weight:900; }
+  .panelSub{ color:var(--muted); font-size:12px; }
+  .pad{ padding:12px; }
+  canvas{ max-height: 340px !important; }
+  #chartProjectRadar{ max-height: none !important; }
+  table{ width:100%; border-collapse:collapse; font-size:13px; }
+  th,td{ border-bottom:1px solid var(--border); padding:10px 8px; vertical-align:top; }
+  th{ color:var(--muted); font-size:12px; text-align:left; position:sticky; top:0; background: rgba(15,23,42,.92); backdrop-filter: blur(10px); }
+  .pill{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid var(--border); background: rgba(255,255,255,.04); }
+  .pill.ok{ border-color: rgba(46,204,113,.35); background: rgba(46,204,113,.12); }
+  .pill.bad{ border-color: rgba(231,76,60,.35); background: rgba(231,76,60,.12); }
+  .muted{ color:var(--muted); }
+  .err{ color:#ffd1d1; }
+</style>
+</head>
+<body>
+<div class="blob blob1"></div>
+<div class="blob blob2"></div>
+<div id="cursorGlow"></div>
+<div id="scrollProgress"></div>
+<header>
+  <div class="head wrap" style="padding:14px 18px;">
+    <div style="display:flex; align-items:center; gap:14px;">
+      <svg width="46" height="46" viewBox="0 0 52 52" fill="none" style="flex-shrink:0;">
+        <rect x="4" y="28" width="8" height="20" rx="2" fill="#ff8a1f"/>
+        <rect x="16" y="18" width="8" height="30" rx="2" fill="#7c5cff"/>
+        <rect x="28" y="8" width="8" height="40" rx="2" fill="#2ecc71"/>
+        <circle cx="42" cy="10" r="8" fill="#0f172a" stroke="#ff8a1f" stroke-width="2"/>
+        <path d="M38.5 10.5l2.3 2.3l4-4.6" stroke="#ff8a1f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div>
+        <div class="title">Dashboard công việc</div>
+        <div class="subtitle">Báo cáo tự động — dữ liệu lấy trực tiếp từ Google Sheet nội bộ Khangmedia</div>
+      </div>
+    </div>
+    <div class="badge">
+      <div class="lbl">Cập nhật</div>
+      <div class="val" id="lastUpdated">—</div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="panel">
+    <div class="controls" style="display:none;">
+      <div class="field" style="min-width:280px;">
+        <label>1) Tải file CSV</label>
+        <input id="csvFile" type="file" accept=".csv" />
+      </div>
+      <div class="field" style="min-width:340px;">
+        <label>Hoặc: dán link Google Sheet</label>
+        <input id="gsheetUrl" placeholder="https://docs.google.com/spreadsheets/d/..." value="https://docs.google.com/spreadsheets/d/1uWoF3lN0UtCPbuCJj5cffFIrBlcYKjvGqrnO44RDowM/edit" />
+      </div>
+      <div class="field" style="min-width:140px;">
+        <label>Tên tab dữ liệu</label>
+        <input id="gsheetTab" value="DỮ LIỆU" />
+      </div>
+      <div class="field"><button id="gsheetBtn" type="button">Tải từ Google Sheet</button></div>
+    </div>
+    <div class="controls" style="padding-top:12px;">
+      <div class="field" style="min-width:220px;">
+        <button id="refreshBtn" type="button">🔄 Làm mới dữ liệu</button>
+      </div>
+      <div class="field"><label>Dự án</label><select id="fProject"></select></div>
+      <div class="field"><label>Loại công việc</label><select id="fType"></select></div>
+      <div class="field"><label>Kênh triển khai</label><select id="fChannel"></select></div>
+      <div class="field"><label>Người phụ trách</label><select id="fAssignee"></select></div>
+      <div class="field"><label>Trạng thái</label><select id="fStatus"></select></div>
+    </div>
+    <div class="controls" style="padding-top:0;">
+      <div class="field"><label>Từ ngày (Ngày giao việc)</label><input id="fromDate" type="date" /></div>
+      <div class="field"><label>Đến ngày (Ngày giao việc)</label><input id="toDate" type="date" /></div>
+      <button id="applyBtn">Áp dụng</button>
+      <button id="resetBtn" class="secondary">Reset</button>
+      <div class="field" style="min-width:260px;"><label>Tìm kiếm</label><input id="search" placeholder="VD: Poster / FILE / Legacy..." /></div>
+    </div>
+    <div class="pad muted" id="statusLine">Đang tải dữ liệu...</div>
+  </div>
+
+  <div style="height:12px"></div>
+
+  <div class="grid kpis">
+    <div class="panel kpi fade-in" style="animation-delay:.02s"><div class="lbl"><span class="icon">📋</span>Tổng công việc</div><div class="val" id="kpiTotal">—</div><div class="hint" id="kpiRange">—</div></div>
+    <div class="panel kpi fade-in" style="animation-delay:.06s"><div class="lbl"><span class="icon">✅</span>Hoàn thành</div><div class="val" id="kpiDone">—</div><div class="hint" id="kpiDonePct">—</div></div>
+    <div class="panel kpi fade-in" style="animation-delay:.10s"><div class="lbl"><span class="icon">⏱️</span>Trung bình ngày xử lý</div><div class="val" id="kpiAvgDays">—</div><div class="hint">trên các việc có dữ liệu</div></div>
+    <div class="panel kpi fade-in" style="animation-delay:.14s"><div class="lbl"><span class="icon">⚠️</span>Chưa có deadline</div><div class="val" id="kpiNoDeadline">—</div><div class="hint">trên tổng số việc</div></div>
+    <div class="panel kpi fade-in" style="animation-delay:.18s"><div class="lbl"><span class="icon">🏆</span>Top loại công việc</div><div class="val" id="kpiTopType">—</div><div class="hint" id="kpiTopTypeCount">—</div></div>
+    <div class="panel kpi fade-in" style="animation-delay:.22s"><div class="lbl"><span class="icon">👤</span>Top người phụ trách</div><div class="val" id="kpiTopAssignee">—</div><div class="hint" id="kpiTopAssigneeCount">—</div></div>
+  </div>
+
+  <div style="height:12px"></div>
+
+  <div class="insight fade-in" style="animation-delay:.26s" id="insightBox">Đang phân tích dữ liệu...</div>
+
+  <div style="height:12px"></div>
+
+  <div class="panel">
+    <div class="panelHead"><div><div class="panelTitle">Xu hướng khối lượng theo ngày giao việc</div><div class="panelSub">Số task giao mỗi ngày, theo khoảng thời gian đang lọc</div></div></div>
+    <div class="pad"><canvas id="chartTrend"></canvas></div>
+  </div>
+
+  <div style="height:12px"></div>
+
+  <div class="grid2">
+    <div class="panel">
+      <div class="panelHead"><div><div class="panelTitle">Tỷ lệ theo mức độ ưu tiên</div><div class="panelSub">Gấp / Bình thường / khác</div></div></div>
+      <div class="pad"><canvas id="chartPriority"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="panelHead"><div><div class="panelTitle">Tỷ lệ theo loại lịch trình</div><div class="panelSub">Việc hàng ngày / Theo timeline / Đột xuất</div></div></div>
+      <div class="pad"><canvas id="chartSchedule"></canvas></div>
+    </div>
+  </div>
+
+  <div style="height:12px"></div>
+
+  <div class="panel">
+    <div class="panelHead"><div><div class="panelTitle">Công việc theo dự án</div><div class="panelSub">Chia theo tỷ lệ % (độ dài thanh), số hiện trên thanh là số lượng công việc thực</div></div></div>
+    <div class="pad"><canvas id="chartProject"></canvas></div>
+  </div>
+
+  <div style="height:12px"></div>
+
+  <div class="panel">
+    <div class="panelHead"><div><div class="panelTitle">Top loại công việc</div><div class="panelSub">Chia theo tỷ lệ % (độ dài thanh), số hiện trên thanh là số lượng công việc thực</div></div></div>
+    <div class="pad"><canvas id="chartType"></canvas></div>
+  </div>
+
+  <div style="height:12px"></div>
+
+  <div class="radarLayout">
+    <div class="panel" style="grid-column:1; grid-row:1;">
+      <div class="panelHead"><div><div class="panelTitle">Top kênh triển khai</div><div class="panelSub">Đếm theo từng kênh (1 việc lên nhiều kênh sẽ được đếm ở mỗi kênh)</div></div></div>
+      <div class="pad"><canvas id="chartChannel"></canvas></div>
+    </div>
+    <div class="panel" style="grid-column:1; grid-row:2;">
+      <div class="panelHead"><div><div class="panelTitle">Trạng thái công việc</div><div class="panelSub">Top 6 loại công việc — Hoàn thành vs Chưa xong</div></div></div>
+      <div class="pad"><canvas id="chartRadar"></canvas></div>
+    </div>
+    <div class="panel" style="grid-column:2; grid-row:1 / span 2;">
+      <div class="panelHead"><div><div class="panelTitle">So sánh dự án theo loại công việc</div><div class="panelSub">Mỗi dự án 1 lớp màu riêng, chồng lên nhau — tối đa 5 dự án nhiều việc nhất</div></div></div>
+      <div class="pad" style="height:calc(100% - 54px);"><canvas id="chartProjectRadar"></canvas></div>
+    </div>
+  </div>
+
+  <div style="height:12px"></div>
+
+  <div class="panel">
+    <div class="panelHead">
+      <div><div class="panelTitle">Danh sách công việc</div><div class="panelSub">Tìm theo mô tả / dự án / loại công việc / kênh / ghi chú</div></div>
+    </div>
+    <div class="pad" style="padding-top:0;">
+      <div style="max-height:420px; overflow:auto; border-radius:14px;">
+        <table>
+          <thead><tr>
+            <th style="width:50px;">STT</th><th>Mô tả</th><th style="width:140px;">Dự án</th>
+            <th style="width:130px;">Loại CV</th><th style="width:160px;">Kênh</th>
+            <th style="width:120px;">Người phụ trách</th><th style="width:100px;">Ngày giao</th><th style="width:110px;">Trạng thái</th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
+<script>
+  const el = (id) => document.getElementById(id);
+  const norm = (s) => (s ?? "").toString().trim();
+  const toKey = (s) => norm(s).toLowerCase();
+  const normHeader = (s) => norm(s).replace(/\s+/g, " ").toLowerCase();
+  const uniq = (arr) => Array.from(new Set(arr)).filter(x => norm(x)).sort((a,b)=>a.localeCompare(b, "vi"));
+  const fmtISO = (d) => d ? d.toISOString().slice(0,10) : "";
+
+  const parseDateDMY = (s) => {
+    s = norm(s);
+    if (!s) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(s + "T00:00:00");
+    const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!m) return null;
+    const [_, dd, mm, yyyy] = m;
+    return new Date(`${yyyy}-${mm.padStart(2,"0")}-${dd.padStart(2,"0")}T00:00:00`);
+  };
+
+  // tolerant header pick: normalizes whitespace/newlines/case before matching
+  const pick = (row, candidates) => {
+    const keys = Object.keys(row);
+    for (const c of candidates) {
+      const ck = normHeader(c);
+      const k = keys.find(k => normHeader(k).includes(ck));
+      if (k) return row[k];
+    }
+    return "";
+  };
+
+  function setSelectOptions(select, values){
+    select.innerHTML = "";
+    const opts = ["(Tất cả)", ...values];
+    for (const v of opts){
+      const o = document.createElement("option");
+      o.value = v === "(Tất cả)" ? "" : v;
+      o.textContent = v;
+      select.appendChild(o);
+    }
+  }
+
+  function topByCount(rows, keyFn){
+    const m = new Map();
+    for (const r of rows){
+      const k = norm(keyFn(r)) || "(Trống)";
+      m.set(k, (m.get(k) ?? 0) + 1);
+    }
+    return Array.from(m.entries()).sort((a,b)=>b[1]-a[1]);
+  }
+
+  // splits a multi-select cell like "FILE, FACEBOOK, GROUP ZALO" into parts
+  function splitMulti(s){
+    return norm(s).split(",").map(x=>x.trim()).filter(Boolean);
+  }
+
+  let rawRows = [];
+  let filteredRows = [];
+  let charts = {};
+
+  function hydrateFilters(){
+    setSelectOptions(el("fProject"), uniq(rawRows.map(r => r.project)));
+    setSelectOptions(el("fType"), uniq(rawRows.map(r => r.type)));
+    setSelectOptions(el("fChannel"), uniq(rawRows.flatMap(r => splitMulti(r.channel))));
+    setSelectOptions(el("fAssignee"), uniq(rawRows.flatMap(r => splitMulti(r.assignee))));
+    setSelectOptions(el("fStatus"), uniq(rawRows.map(r => r.status)));
+
+    const dates = rawRows.map(r => r.assignedDate).filter(Boolean).sort((a,b)=>a-b);
+    if (dates.length){
+      el("fromDate").value = fmtISO(dates[0]);
+      el("toDate").value = fmtISO(dates[dates.length-1]);
+    }
+  }
+
+  function countUp(node, target, ms){
+    ms = ms || 700;
+    const start = performance.now();
+    const from = 0;
+    function tick(now){
+      const p = Math.min(1, (now - start) / ms);
+      const eased = 1 - Math.pow(1 - p, 3); // ease-out cubic — nhanh lúc đầu, êm lúc cuối
+      const val = Math.round(from + (target - from) * eased);
+      node.textContent = val.toLocaleString("vi-VN");
+      if (p < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function renderInsight(){
+    const box = el("insightBox");
+    const total = filteredRows.length;
+    if (!total){ box.innerHTML = "Chưa có công việc nào khớp bộ lọc hiện tại."; return; }
+
+    const done = filteredRows.filter(r => toKey(r.status) === "done").length;
+    const donePct = Math.round(done*100/total);
+
+    const projCounts = topByCount(filteredRows, r => norm(r.project) || "(Trống)");
+    const topProj = projCounts[0];
+    const topProjPct = topProj ? Math.round(topProj[1]*100/total) : 0;
+
+    const typeCounts = topByCount(filteredRows, r => r.type);
+    const topType = typeCounts[0];
+
+    const prioCounts = topByCount(filteredRows, r => r.priority);
+    const urgent = prioCounts.find(x => toKey(x[0]).includes("gấp"));
+    const urgentPct = urgent ? Math.round(urgent[1]*100/total) : 0;
+
+    const noDeadline = filteredRows.filter(r => !r.deadline).length;
+    const noDeadlinePct = Math.round(noDeadline*100/total);
+
+    const parts = [];
+    parts.push(`Trong <b>${total}</b> công việc đang xem, <b>${donePct}%</b> đã hoàn thành.`);
+    if (topProj) parts.push(`<b>${topProj[0]}</b> chiếm khối lượng lớn nhất (<b>${topProjPct}%</b>, ${topProj[1]} việc).`);
+    if (topType) parts.push(`Loại việc phổ biến nhất: <b>${topType[0]}</b> (${topType[1]} việc).`);
+    if (urgent && urgentPct >= 30) parts.push(`⚠️ <b>${urgentPct}%</b> là việc GẤP — tỷ lệ khá cao, đáng chú ý.`);
+    if (noDeadlinePct >= 50) parts.push(`⚠️ <b>${noDeadlinePct}%</b> việc chưa có deadline cụ thể.`);
+
+    box.innerHTML = parts.join(" ");
+  }
+
+  function computeAndRender(){
+    const project = el("fProject").value;
+    const type = el("fType").value;
+    const channel = el("fChannel").value;
+    const assignee = el("fAssignee").value;
+    const status = el("fStatus").value;
+    const from = el("fromDate").value ? new Date(el("fromDate").value + "T00:00:00") : null;
+    const to = el("toDate").value ? new Date(el("toDate").value + "T23:59:59") : null;
+    const q = toKey(el("search").value);
+
+    filteredRows = rawRows.filter(r => {
+      if (project && r.project !== project) return false;
+      if (type && r.type !== type) return false;
+      if (channel && !splitMulti(r.channel).includes(channel)) return false;
+      if (assignee && !splitMulti(r.assignee).includes(assignee)) return false;
+      if (status && r.status !== status) return false;
+      if (from && (!r.assignedDate || r.assignedDate < from)) return false;
+      if (to && (!r.assignedDate || r.assignedDate > to)) return false;
+      if (q){
+        const hay = toKey([r.desc, r.project, r.type, r.channel, r.assignee, r.note].join(" | "));
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+
+    const total = filteredRows.length;
+    const done = filteredRows.filter(r => toKey(r.status) === "done").length;
+
+    countUp(el("kpiTotal"), total);
+    countUp(el("kpiDone"), done);
+    el("kpiDonePct").textContent = total ? `${Math.round(done*100/total)}%` : "—";
+
+    const dates = filteredRows.map(r => r.assignedDate).filter(Boolean).sort((a,b)=>a-b);
+    el("kpiRange").textContent = dates.length ? `${fmtISO(dates[0])} → ${fmtISO(dates[dates.length-1])}` : "—";
+
+    const validDays = filteredRows.map(r => r.processDays).filter(v => v !== null && !isNaN(v));
+    el("kpiAvgDays").textContent = validDays.length ? (validDays.reduce((a,b)=>a+b,0)/validDays.length).toFixed(1) : "—";
+
+    const noDeadline = filteredRows.filter(r => !r.deadline).length;
+    el("kpiNoDeadline").textContent = total ? `${noDeadline}/${total}` : "—";
+
+    const topType = topByCount(filteredRows, r => r.type);
+    el("kpiTopType").textContent = topType[0]?.[0] ?? "—";
+    el("kpiTopTypeCount").textContent = topType[0] ? `${topType[0][1]} task` : "—";
+
+    const topAssignee = topByCount(filteredRows.flatMap(r => splitMulti(r.assignee).map(a => ({...r, assignee:a}))), r => r.assignee);
+    el("kpiTopAssignee").textContent = topAssignee[0]?.[0] ?? "—";
+    el("kpiTopAssigneeCount").textContent = topAssignee[0] ? `${topAssignee[0][1]} task` : "—";
+
+    const channelCounts = topByCount(filteredRows.flatMap(r => splitMulti(r.channel).map(c => ({channel:c}))), r => r.channel);
+
+    renderTrendChart();
+    renderPriorityChart();
+    renderScheduleChart();
+    renderProjectChart();
+    renderTypeChart(topType);
+    renderChannelChart(channelCounts);
+    renderRadar(topType);
+    renderProjectRadar(topType);
+    renderInsight();
+    renderTable();
+  }
+
+  function destroy(name){ if (charts[name]) { charts[name].destroy(); charts[name]=null; } }
+
+  function renderTrendChart(){
+    const byDate = new Map();
+    for (const r of filteredRows){
+      if (!r.assignedDate) continue;
+      const key = fmtISO(r.assignedDate);
+      byDate.set(key, (byDate.get(key) ?? 0) + 1);
+    }
+    const days = Array.from(byDate.keys()).sort();
+    const counts = days.map(d => byDate.get(d));
+
+    destroy("trend");
+    charts.trend = new Chart(el("chartTrend"), {
+      type:"line",
+      data:{ labels: days, datasets:[{
+        label:"Số task giao", data: counts,
+        borderColor:"rgba(255,138,31,.95)", backgroundColor:"rgba(255,138,31,.18)",
+        pointBackgroundColor:"rgba(255,138,31,.95)", tension:.3, fill:true, borderWidth:2
+      }]},
+      options:{ responsive:true, plugins:{legend:{display:false}},
+        scales:{ x:{ ticks:{color:"#9aa4b2"}, grid:{display:false} }, y:{ ticks:{color:"#9aa4b2", precision:0}, grid:{color:"rgba(255,255,255,.06)"}, beginAtZero:true } } }
+    });
+  }
+
+  const TYPE_PALETTE = ["#ff8a1f","#7c5cff","#2ecc71","#e74c3c","#3aa0ff","#f1c40f","#ff6bcb","#4dd0c8","#c084fc","#ffb454","#8ea0ff","#6ee7b7"];
+  const typeColorCache = new Map();
+  function colorForType(name){
+    const k = norm(name) || "(Trống)";
+    if (!typeColorCache.has(k)){
+      typeColorCache.set(k, TYPE_PALETTE[typeColorCache.size % TYPE_PALETTE.length]);
+    }
+    return typeColorCache.get(k);
+  }
+
+  // Dot-strip helper removed — no longer used since all charts moved to
+  // bar/radar/donut styles for readability.
+
+  function renderPriorityChart(){
+    const counts = topByCount(filteredRows, r => r.priority);
+    const palette = ["rgba(231,76,60,.75)","rgba(46,204,113,.75)","rgba(255,138,31,.75)","rgba(124,92,255,.75)","rgba(154,164,178,.75)"];
+    destroy("priority");
+    charts.priority = new Chart(el("chartPriority"), {
+      type:"doughnut",
+      data:{ labels:counts.map(x=>x[0]), datasets:[{ data:counts.map(x=>x[1]), backgroundColor: counts.map((_,i)=>palette[i%palette.length]), borderColor:"#0f172a", borderWidth:2 }]},
+      options:{ responsive:true, plugins:{legend:{position:"bottom", labels:{color:"#9aa4b2"}}} }
+    });
+  }
+
+  function renderScheduleChart(){
+    const counts = topByCount(filteredRows, r => r.schedule);
+    const palette = ["rgba(58,160,255,.75)","rgba(255,138,31,.75)","rgba(124,92,255,.75)","rgba(46,204,113,.75)","rgba(154,164,178,.75)"];
+    destroy("schedule");
+    charts.schedule = new Chart(el("chartSchedule"), {
+      type:"doughnut",
+      data:{ labels:counts.map(x=>x[0]), datasets:[{ data:counts.map(x=>x[1]), backgroundColor: counts.map((_,i)=>palette[i%palette.length]), borderColor:"#0f172a", borderWidth:2 }]},
+      options:{ responsive:true, plugins:{legend:{position:"bottom", labels:{color:"#9aa4b2"}}} }
+    });
+  }
+
+  const STATUS_PALETTE = ["#3aa0ff","#e74c3c","#f5a623","#2ecc71","#ff8a1f","#4dd0c8","#9b59d0","#f1c40f"];
+  const statusColorCache = new Map();
+  function colorForStatus(name){
+    const k = norm(name) || "(Trống)";
+    if (!statusColorCache.has(k)){
+      statusColorCache.set(k, STATUS_PALETTE[statusColorCache.size % STATUS_PALETTE.length]);
+    }
+    return statusColorCache.get(k);
+  }
+
+  function renderProjectChart(){
+    const total = filteredRows.length;
+    const projCounts = topByCount(filteredRows, r => norm(r.project) || "(Trống)");
+    const TOPN = 8;
+    let top = projCounts.slice(0, TOPN);
+    const restCount = projCounts.slice(TOPN).reduce((s,x)=>s+x[1], 0);
+    if (restCount > 0) top = [...top, ["Khác", restCount]];
+
+    const datasets = top.map(([name, count]) => ({
+      label: name,
+      data: [ total ? (count/total*100) : 0 ],
+      _count: count,
+      backgroundColor: colorForType(name),
+      borderColor: "#0f172a", borderWidth: 1
+    }));
+
+    destroy("project");
+    charts.project = new Chart(el("chartProject"), {
+      type: "bar",
+      data: { labels: [""], datasets },
+      options: {
+        indexAxis: "y", responsive: true,
+        plugins: {
+          legend: { position: "bottom", labels: { color: "#9aa4b2", boxWidth: 10 } },
+          tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.dataset._count} công việc (${ctx.parsed.x.toFixed(1)}%)` } },
+          datalabels: {
+            color: "#0b0d14", font: { weight: 800, size: 11 },
+            formatter: (_, ctx) => ctx.dataset._count > 0 ? ctx.dataset._count : ""
+          }
+        },
+        scales: {
+          x: { stacked: true, min: 0, max: 100, ticks: { color: "#9aa4b2", callback: v => v + "%" }, grid: { color: "rgba(255,255,255,.06)" } },
+          y: { stacked: true, grid: { display: false }, ticks: { display: false } }
+        }
+      },
+      plugins: [ChartDataLabels]
+    });
+  }
+
+  function renderTypeChart(topTypeEntries){
+    const total = filteredRows.length;
+    const TOPN = 8;
+    let top = topTypeEntries.slice(0, TOPN);
+    const restCount = topTypeEntries.slice(TOPN).reduce((s,x)=>s+x[1], 0);
+    if (restCount > 0) top = [...top, ["Khác", restCount]];
+
+    const datasets = top.map(([name, count]) => ({
+      label: name,
+      data: [ total ? (count/total*100) : 0 ],
+      _count: count,
+      backgroundColor: colorForType(name),
+      borderColor: "#0f172a", borderWidth: 1
+    }));
+
+    destroy("type");
+    charts.type = new Chart(el("chartType"), {
+      type: "bar",
+      data: { labels: [""], datasets },
+      options: {
+        indexAxis: "y", responsive: true,
+        plugins: {
+          legend: { position: "bottom", labels: { color: "#9aa4b2", boxWidth: 10 } },
+          tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.dataset._count} công việc (${ctx.parsed.x.toFixed(1)}%)` } },
+          datalabels: {
+            color: "#0b0d14", font: { weight: 800, size: 11 },
+            formatter: (_, ctx) => ctx.dataset._count > 0 ? ctx.dataset._count : ""
+          }
+        },
+        scales: {
+          x: { stacked: true, min: 0, max: 100, ticks: { color: "#9aa4b2", callback: v => v + "%" }, grid: { color: "rgba(255,255,255,.06)" } },
+          y: { stacked: true, grid: { display: false }, ticks: { display: false } }
+        }
+      },
+      plugins: [ChartDataLabels]
+    });
+  }
+
+  // Shared "soft, easy to read" radar config: rounded/curved lines, larger
+  // clearer point labels, fewer clutter ticks, subtle glow around points.
+  // fontSize/padding are tunable per chart — small charts need tighter values
+  // than the big one, or labels overlap each other in a cramped container.
+  function softRadarScale(fontSize){
+    return {
+      r: {
+        grid: { color: "rgba(255,255,255,.10)", circular: true },
+        angleLines: { color: "rgba(255,255,255,.10)" },
+        pointLabels: { color: "#c7ccd6", font: { size: fontSize || 11 }, padding: 6 },
+        ticks: { color: "#8189a0", precision: 0, backdropColor: "rgba(0,0,0,0)", maxTicksLimit: 4, font:{size:9} },
+        beginAtZero: true
+      }
+    };
+  }
+  function softRadarElements(){
+    return { line: { tension: 0.5, borderWidth: 2.5 }, point: { radius: 4, hoverRadius: 6, borderWidth: 2, borderColor: "#0f172a" } };
+  }
+  function softRadarLayout(padding){ return { padding: padding || 16 }; }
+
+  function renderChannelChart(channelEntries){
+    const c = channelEntries.slice(0,8);
+    destroy("channel");
+    charts.channel = new Chart(el("chartChannel"), {
+      type:"radar",
+      data:{
+        labels: c.length ? c.map(x=>x[0]) : ["—"],
+        datasets:[{
+          label:"Số task",
+          data: c.length ? c.map(x=>x[1]) : [0],
+          borderColor:"rgba(124,92,255,.95)", backgroundColor:"rgba(124,92,255,.22)",
+          pointBackgroundColor:"rgba(124,92,255,.95)"
+        }]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false, layout: softRadarLayout(14), elements: softRadarElements(),
+        plugins:{ legend:{display:false} },
+        scales: softRadarScale(10)
+      }
+    });
+  }
+
+  function renderRadar(topTypeEntries){
+    const top6 = topTypeEntries.slice(0,6).map(x=>x[0]);
+    const doneCounts = [], notDoneCounts = [];
+    for (const typeName of top6){
+      const rowsOfType = filteredRows.filter(r => (r.type || "(Trống)") === typeName);
+      const done = rowsOfType.filter(r => toKey(r.status) === "done").length;
+      doneCounts.push(done);
+      notDoneCounts.push(rowsOfType.length - done);
+    }
+    destroy("radar");
+    charts.radar = new Chart(el("chartRadar"), {
+      type:"radar",
+      data:{ labels: top6.length ? top6 : ["—"], datasets:[
+        { label:"Hoàn thành", data: top6.length?doneCounts:[0], borderColor:"rgba(46,204,113,.95)", backgroundColor:"rgba(46,204,113,.20)", pointBackgroundColor:"rgba(46,204,113,.95)" },
+        { label:"Chưa xong", data: top6.length?notDoneCounts:[0], borderColor:"rgba(231,76,60,.95)", backgroundColor:"rgba(231,76,60,.16)", pointBackgroundColor:"rgba(231,76,60,.95)" }
+      ]},
+      options:{
+        responsive:true, maintainAspectRatio:false, layout: softRadarLayout(14), elements: softRadarElements(),
+        plugins:{legend:{position:"bottom", labels:{color:"#c7ccd6", boxWidth:10, font:{size:11}}}},
+        scales: softRadarScale(10)
+      }
+    });
+  }
+
+  function hexToRgba(hex, alpha){
+    const h = hex.replace("#","");
+    const r = parseInt(h.substring(0,2),16), g = parseInt(h.substring(2,4),16), b = parseInt(h.substring(4,6),16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
+  function renderProjectRadar(topTypeEntries){
+    const axes = topTypeEntries.slice(0,6).map(x=>x[0]);
+    const projectCounts = topByCount(filteredRows, r => norm(r.project) || "(Trống)");
+    const topProjects = projectCounts.slice(0,5).map(x=>x[0]);
+
+    const datasets = topProjects.map(proj => {
+      const color = colorForType(proj); // reuse the same stable palette/cache, keyed by project name
+      const data = axes.map(typeName => filteredRows.filter(r =>
+        (norm(r.project)||"(Trống)") === proj && (norm(r.type)||"(Trống)") === typeName
+      ).length);
+      return {
+        label: proj, data,
+        borderColor: color, backgroundColor: hexToRgba(color, 0.10),
+        pointBackgroundColor: color
+      };
+    });
+
+    destroy("projectRadar");
+    charts.projectRadar = new Chart(el("chartProjectRadar"), {
+      type: "radar",
+      data: { labels: axes.length ? axes : ["—"], datasets: axes.length ? datasets : [] },
+      options: {
+        responsive: true, maintainAspectRatio: false, layout: softRadarLayout(28), elements: softRadarElements(),
+        plugins: { legend: { position:"bottom", labels:{ color:"#c7ccd6", boxWidth:10, font:{size:12}, padding:14 } } },
+        scales: softRadarScale(12.5)
+      }
+    });
+  }
+
+  function renderTable(){
+    const tbody = el("tbody");
+    tbody.innerHTML = "";
+    for (const r of filteredRows){
+      const tr = document.createElement("tr");
+      const statusTag = (toKey(r.status) === "done") ? `<span class="pill ok">DONE</span>` : `<span class="pill">${norm(r.status) || "—"}</span>`;
+      tr.innerHTML = `
+        <td>${norm(r.stt) || ""}</td>
+        <td><div style="font-weight:700">${norm(r.desc) || "—"}</div><div class="muted" style="font-size:12px">${norm(r.category) ? "Chuyên mục: " + norm(r.category) : ""}</div></td>
+        <td>${norm(r.project) || "—"}</td>
+        <td>${norm(r.type) || "—"}</td>
+        <td>${norm(r.channel) || "—"}</td>
+        <td>${norm(r.assignee) || "—"}</td>
+        <td>${r.assignedDate ? fmtISO(r.assignedDate) : "—"}</td>
+        <td>${statusTag}</td>`;
+      tbody.appendChild(tr);
+    }
+  }
+
+  function mapObjectRowsToTasks(objRows){
+    return (objRows || []).map(row => {
+      const assignedRaw = pick(row, ["NGÀY GIAO VIỆC"]);
+      const deadlineRaw = pick(row, ["DEADLINE"]);
+      const processDaysRaw = pick(row, ["SỐ NGÀY XỬ LÝ"]);
+      return {
+        stt: pick(row, ["STT"]),
+        desc: pick(row, ["MÔ TẢ CÔNG VIỆC"]),
+        category: pick(row, ["CHUYÊN MỤC"]),
+        project: pick(row, ["DỰ ÁN/CHIẾN DỊCH", "DỰ ÁN"]),
+        type: pick(row, ["LOẠI CÔNG VIỆC"]),
+        requester: pick(row, ["YÊU CẦU TỪ"]),
+        priority: pick(row, ["MỨC ĐỘ ƯU TIÊN"]),
+        schedule: pick(row, ["LOẠI LỊCH TRÌNH"]),
+        channel: pick(row, ["KÊNH TRIỂN KHAI"]),
+        assignee: pick(row, ["NGƯỜI PHỤ TRÁCH"]),
+        status: pick(row, ["TRẠNG THÁI CÔNG VIỆC"]),
+        note: pick(row, ["GHI CHÚ"]),
+        deadline: norm(deadlineRaw),
+        assignedDate: parseDateDMY(assignedRaw),
+        processDays: processDaysRaw !== "" && !isNaN(Number(processDaysRaw)) ? Number(processDaysRaw) : null
+      };
+    }).filter(r => norm(r.desc));
+  }
+
+  function finishLoading(count, sourceLabel){
+    el("statusLine").innerHTML = `Đã tải <b>${count}</b> dòng từ <b>${sourceLabel}</b>.`;
+    el("lastUpdated").textContent = new Date().toLocaleString("vi-VN");
+    hydrateFilters();
+    computeAndRender();
+  }
+
+  function loadCsvText(csvText, fileName){
+    const parsed = Papa.parse(csvText, { header:true, skipEmptyLines:true });
+    if (parsed.errors && parsed.errors.length){
+      console.warn("CSV parse warnings:", parsed.errors);
+    }
+    rawRows = mapObjectRowsToTasks(parsed.data);
+    finishLoading(rawRows.length, `file <b>${fileName}</b>`);
+  }
+
+  // ---- Google Sheets loader via JSONP (bypasses CORS entirely, works even
+  // when this HTML file is opened directly as file://, unlike fetch()) ----
+  function extractSheetId(url){
+    const m = norm(url).match(/\/d\/([a-zA-Z0-9-_]+)/);
+    return m ? m[1] : norm(url); // allow pasting a raw ID too
+  }
+
+  function gvizDateToJs(v){
+    // gviz returns dates as strings like "Date(2026,7,1)" (month is 0-indexed)
+    if (typeof v === "string"){
+      const m = v.match(/^Date\((\d+),(\d+),(\d+)/);
+      if (m) return new Date(Number(m[1]), Number(m[2]), Number(m[3]));
+    }
+    return null;
+  }
+
+  let gvizCallbackCounter = 0;
+  function loadFromGoogleSheet(){
+    const sheetId = extractSheetId(el("gsheetUrl").value);
+    const tabName = norm(el("gsheetTab").value) || "DỮ LIỆU";
+    if (!sheetId){ el("statusLine").innerHTML = `<span class="err">Vui lòng dán link Google Sheet hợp lệ.</span>`; return; }
+
+    el("statusLine").textContent = "Đang tải từ Google Sheet...";
+    gvizCallbackCounter += 1;
+    const cbName = `__gvizCb_${gvizCallbackCounter}`;
+    const timeoutId = setTimeout(() => {
+      cleanup();
+      el("statusLine").innerHTML = `<span class="err">Không tải được sau 10s. Kiểm tra: (1) Sheet đã bật "Bất kỳ ai có link — Người xem", (2) tên tab đúng "${tabName}", (3) kết nối mạng.</span>`;
+    }, 10000);
+
+    function cleanup(){
+      clearTimeout(timeoutId);
+      delete window[cbName];
+      script.remove();
+    }
+
+    window[cbName] = function(resp){
+      cleanup();
+      try{
+        if (!resp || resp.status === "error"){
+          const reason = resp && resp.errors && resp.errors[0] && resp.errors[0].detailed_message;
+          el("statusLine").innerHTML = `<span class="err">Google trả lỗi khi đọc sheet${reason ? ": " + reason : ""}. Kiểm tra tên tab "${tabName}" và quyền chia sẻ.</span>`;
+          return;
+        }
+        const cols = resp.table.cols.map(c => c.label || c.id || "");
+        const objRows = resp.table.rows.map(row => {
+          const obj = {};
+          cols.forEach((label, i) => {
+            const cell = row.c[i];
+            let v = cell ? cell.v : "";
+            const asDate = gvizDateToJs(v);
+            if (asDate) v = `${asDate.getFullYear()}-${String(asDate.getMonth()+1).padStart(2,"0")}-${String(asDate.getDate()).padStart(2,"0")}`;
+            obj[label] = v == null ? "" : v;
+          });
+          return obj;
+        });
+        rawRows = mapObjectRowsToTasks(objRows);
+        finishLoading(rawRows.length, `Google Sheet — tab <b>${tabName}</b>`);
+      } catch(err){
+        el("statusLine").innerHTML = `<span class="err">Lỗi xử lý dữ liệu: ${err.message}</span>`;
+      }
+    };
+
+    const src = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq`
+      + `?tqx=out:json;responseHandler:${cbName}`
+      + `&sheet=${encodeURIComponent(tabName)}`;
+    const script = document.createElement("script");
+    script.src = src;
+    script.onerror = () => {
+      cleanup();
+      el("statusLine").innerHTML = `<span class="err">Không tải được script từ Google.</span> Thử dán link này trực tiếp vào 1 tab trình duyệt mới để kiểm tra: <br><a href="${src}" target="_blank" style="color:#8fb8ff;word-break:break-all;">${src}</a><br>Nếu tab mới cũng không hiện dữ liệu JSON → lỗi ở phía Google Sheet (sai tên tab/quyền chia sẻ). Nếu tab mới hiện dữ liệu bình thường nhưng dashboard vẫn báo lỗi → trình duyệt hoặc phần mềm bảo mật đang chặn request khi mở file dạng file://.`;
+    };
+    document.body.appendChild(script);
+  }
+
+  el("gsheetBtn").addEventListener("click", loadFromGoogleSheet);
+  el("refreshBtn").addEventListener("click", loadFromGoogleSheet);
+
+  // Tự động tải dữ liệu ngay khi mở trang — người xem không cần thao tác gì
+  loadFromGoogleSheet();
+
+  el("csvFile").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    el("statusLine").textContent = "Đang đọc file...";
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try { loadCsvText(evt.target.result, file.name); }
+      catch(err){ el("statusLine").innerHTML = `<span class="err">Lỗi đọc file: ${err.message}</span>`; }
+    };
+    reader.onerror = () => { el("statusLine").innerHTML = `<span class="err">Không đọc được file.</span>`; };
+    reader.readAsText(file, "UTF-8");
+  });
+
+  el("applyBtn").addEventListener("click", computeAndRender);
+  el("resetBtn").addEventListener("click", () => {
+    el("fProject").value = ""; el("fType").value = ""; el("fChannel").value = "";
+    el("fAssignee").value = ""; el("fStatus").value = ""; el("search").value = "";
+    hydrateFilters();
+    computeAndRender();
+  });
+  el("search").addEventListener("input", computeAndRender);
+
+  setSelectOptions(el("fProject"), []);
+  setSelectOptions(el("fType"), []);
+  setSelectOptions(el("fChannel"), []);
+  setSelectOptions(el("fAssignee"), []);
+  setSelectOptions(el("fStatus"), []);
+
+  // Reveal-on-scroll: các khối biểu đồ/bảng chỉ "bay lên" khi cuộn tới,
+  // thay vì hiện hết cùng lúc — cảm giác trang sống động hơn khi cuộn.
+  // (Khối KPI/insight vẫn giữ hiệu ứng fade-in tức thời riêng, gắn sẵn trong HTML.)
+  document.querySelectorAll(".panel:not(.kpi)").forEach(node => node.classList.add("reveal"));
+  const revealObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting){
+        entry.target.classList.add("in-view");
+        revealObserver.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.12 });
+  document.querySelectorAll(".reveal").forEach(node => revealObserver.observe(node));
+
+  // Quầng sáng theo con trỏ chuột (mượt hoá bằng nội suy mỗi khung hình)
+  const glow = el("cursorGlow");
+  let glowTargetX = -400, glowTargetY = -400, glowX = -400, glowY = -400;
+  window.addEventListener("mousemove", (e) => {
+    glowTargetX = e.clientX; glowTargetY = e.clientY;
+    glow.style.opacity = "0.6";
+  });
+  window.addEventListener("mouseleave", () => { glow.style.opacity = "0"; });
+  (function animateGlow(){
+    glowX += (glowTargetX - glowX) * 0.15;
+    glowY += (glowTargetY - glowY) * 0.15;
+    glow.style.left = glowX + "px";
+    glow.style.top = glowY + "px";
+    requestAnimationFrame(animateGlow);
+  })();
+
+  // Thanh tiến trình cuộn trang
+  const scrollBar = el("scrollProgress");
+  window.addEventListener("scroll", () => {
+    const h = document.documentElement;
+    const scrolled = h.scrollTop / (h.scrollHeight - h.clientHeight || 1) * 100;
+    scrollBar.style.width = scrolled + "%";
+  });
+</script>
+</body>
+</html>
